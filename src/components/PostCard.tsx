@@ -13,7 +13,7 @@ type Props = {
   onEditName: () => void
 }
 
-const CONTENT_PREVIEW_LIMIT = 100
+const CONTENT_PREVIEW_LIMIT = 220
 
 // Turns any http(s):// or www. link inside post text into a real, colored, clickable link.
 function renderWithLinks(text: string) {
