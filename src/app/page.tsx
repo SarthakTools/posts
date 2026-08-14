@@ -197,7 +197,13 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen pb-20">
+    <div className="min-h-screen pb-20 relative">
+      {/* Ambient background glow — muted, gives the glass panels something soft to blur */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none bg-zinc-100 dark:bg-zinc-950">
+        <div className="absolute -top-40 left-1/4 w-[36rem] h-[36rem] bg-purple-400/20 dark:bg-purple-600/20 rounded-full blur-[100px]" />
+        <div className="absolute top-1/4 -right-40 w-[30rem] h-[30rem] bg-pink-400/15 dark:bg-orange-500/10 rounded-full blur-[100px]" />
+      </div>
+
       <Navbar
         isLoggedIn={isAdmin}
         onLogin={handleLogin}
@@ -211,7 +217,7 @@ export default function Home() {
         }}
       />
 
-      <main className="pt-28 px-4 max-w-2xl mx-auto space-y-6">
+      <main className="pt-28 px-4 max-w-2xl mx-auto space-y-8">
         {/* Create / Edit Modal */}
         {(showNewPost || editingPost) && (
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">

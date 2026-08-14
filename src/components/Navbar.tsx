@@ -1,6 +1,5 @@
 'use client'
 
-import ThemeToggle from './ThemeToggle'
 import { LogIn, LogOut, Plus } from 'lucide-react'
 
 type Props = {
@@ -29,8 +28,6 @@ export default function Navbar({
 
         {/* Actions */}
         <div className="flex items-center gap-1">
-          <ThemeToggle />
-
           {isLoggedIn ? (
             <>
               <button
