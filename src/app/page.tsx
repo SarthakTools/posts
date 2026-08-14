@@ -11,10 +11,11 @@ import { Post } from '@/types/post'
 // NOTE: this is visible to anyone who inspects your site's code —
 // it just hides/shows buttons, it is not real security.
 const ADMIN_PASSWORD = 'parmarhehe'
+const AUTHOR_NAME = 'MayBEE'
 
 export default function Home() {
   const [isAdmin, setIsAdmin] = useState(false)
-  const [authorName, setAuthorName] = useState('sarthakparmar')
+  const [authorName, setAuthorName] = useState('MayBEE')
   const [siteName, setSiteName] = useState('Posts')
   const [siteIcon, setSiteIcon] = useState('N')
   const [posts, setPosts] = useState<Post[]>([])
