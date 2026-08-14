@@ -13,7 +13,7 @@ type Props = {
   onEditName: () => void
 }
 
-const CONTENT_PREVIEW_LIMIT = 220
+const CONTENT_PREVIEW_LIMIT = 100
 
 // Turns any http(s):// or www. link inside post text into a real, colored, clickable link.
 function renderWithLinks(text: string) {
@@ -130,7 +130,7 @@ export default function PostCard({ post, isAdmin, authorName, onEdit, onDelete, 
     >
       <div className="flex items-center justify-between mb-4 text-sm text-zinc-500 dark:text-zinc-400">
         <div className="flex items-center gap-1.5">
-          <span className="font-medium text-zinc-800 dark:text-zinc-200">{post.author_name || authorName}</span>
+          <span className="font-medium text-zinc-800 dark:text-zinc-200">{authorName}</span>
           {isAdmin && (
             <button
               onClick={onEditName}

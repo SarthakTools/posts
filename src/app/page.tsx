@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { ArrowUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Navbar from '@/components/Navbar'
 import PostCard from '@/components/PostCard'
@@ -27,6 +28,7 @@ export default function Home() {
   const [posting, setPosting] = useState(false)
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [showScrollTop, setShowScrollTop] = useState(false)
 
   // Edit mode
   const [editingPost, setEditingPost] = useState<Post | null>(null)
@@ -47,19 +49,21 @@ export default function Home() {
     setAuthorName(trimmed)
     localStorage.setItem('authorName', trimmed)
 
-    // Also update the name on every existing post, not just new ones
-    const ids = posts.map((p) => p.id)
-    if (ids.length > 0) {
-      const { error } = await supabase
-        .from('posts')
-        .update({ author_name: trimmed })
-        .in('id', ids)
+    // Update the currently loaded cards immediately so every visible post changes.
+    setPosts((prev) => prev.map((p) => ({ ...p, author_name: trimmed })))
 
-      if (error) {
-        alert('Name changed here, but failed to update old posts: ' + error.message)
-      } else {
-        loadPosts()
-      }
+    // Then persist the new name for ALL posts in Supabase, including posts
+    // that haven't been loaded yet by infinite scroll.
+    const { data, error } = await supabase
+      .from('posts')
+      .update({ author_name: trimmed })
+      .not('id', 'is', null)
+      .select('id')
+
+    if (error) {
+      alert('Name changed on this page, but Supabase could not update old posts: ' + error.message)
+    } else if (!data || data.length === 0) {
+      alert('Name changed on this page, but Supabase blocked the database update. Check the UPDATE RLS policy for the posts table.')
     }
   }
 
@@ -67,6 +71,18 @@ export default function Home() {
     loadPosts()
     loadSiteSettings()
   }, [])
+
+  // Show the back-to-top button only after the user has scrolled down.
+  useEffect(() => {
+    const onScroll = () => setShowScrollTop(window.scrollY > 500)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  function scrollToTop() {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   async function loadSiteSettings() {
     const { data } = await supabase
@@ -281,11 +297,15 @@ export default function Home() {
         'See the RLS fix instructions to allow edits without a real login.'
       )
     } else {
+      // Update the post in place so we stay on the same scroll position / page
+      const updated = data[0] as Post
+      setPosts((prev) =>
+        prev.map((p) => (p.id === editingPost.id ? { ...p, ...updated } : p))
+      )
       setEditingPost(null)
       setNewContent('')
       setImageFile(null)
       setImagePreview(null)
-      loadPosts()
     }
     setPosting(false)
   }
@@ -302,7 +322,8 @@ export default function Home() {
         'See the RLS fix instructions to allow deletes without a real login.'
       )
     } else {
-      loadPosts()
+      // Remove from local feed without resetting pagination / scroll
+      setPosts((prev) => prev.filter((p) => p.id !== id))
     }
   }
 
@@ -436,6 +457,17 @@ export default function Home() {
           </div>
         )}
       </main>
+
+      {showScrollTop && (
+        <button
+          onClick={scrollToTop}
+          aria-label="Scroll to top"
+          title="Back to top"
+          className="fixed bottom-6 right-6 z-40 w-11 h-11 rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-black/10 dark:border-white/10 shadow-lg flex items-center justify-center hover:bg-white dark:hover:bg-zinc-800 transition-all duration-200"
+        >
+          <ArrowUp size={19} />
+        </button>
+      )}
     </div>
   )
-}
+} 

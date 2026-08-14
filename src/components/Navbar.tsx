@@ -29,7 +29,7 @@ export default function Navbar({
           <span className="w-6 h-6 rounded-full bg-amber-400 flex items-center justify-center text-black text-xs font-bold overflow-hidden">
             {siteIcon}
           </span>
-          <span className="hidden sm:inline">{siteName}</span>
+          <span className="inline">{siteName}</span>
           {isLoggedIn && (
             <button
               onClick={onEditBranding}
