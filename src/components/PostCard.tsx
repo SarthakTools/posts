@@ -2,17 +2,61 @@
 
 import { Post } from '@/types/post'
 import { useEffect, useState } from 'react'
+import { Pencil } from 'lucide-react'
 
 type Props = {
   post: Post
   isAdmin: boolean
+  authorName: string
   onEdit: (post: Post) => void
   onDelete: (id: string) => void
+  onEditName: () => void
 }
 
-export default function PostCard({ post, isAdmin, onEdit, onDelete }: Props) {
+const CONTENT_PREVIEW_LIMIT = 220
+
+// Turns any http(s):// or www. link inside post text into a real, colored, clickable link.
+function renderWithLinks(text: string) {
+  const urlRegex = /((?:https?:\/\/|www\.)[^\s]+)/g
+  const result: (string | React.ReactElement)[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  let key = 0
+
+  while ((match = urlRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      result.push(text.slice(lastIndex, match.index))
+    }
+    const url = match[0]
+    const href = url.startsWith('http') ? url : `https://${url}`
+    result.push(
+      <a
+        key={key++}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-sky-500 dark:text-sky-400 underline decoration-sky-500/40 hover:decoration-sky-500 break-words"
+      >
+        {url}
+      </a>
+    )
+    lastIndex = match.index + url.length
+  }
+  if (lastIndex < text.length) {
+    result.push(text.slice(lastIndex))
+  }
+  return result
+}
+
+export default function PostCard({ post, isAdmin, authorName, onEdit, onDelete, onEditName }: Props) {
   // Average color pulled from the post's image, used to tint the card.
   const [accent, setAccent] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
+
+  const isLong = post.content.length > CONTENT_PREVIEW_LIMIT
+  const displayContent = isLong && !expanded
+    ? post.content.slice(0, CONTENT_PREVIEW_LIMIT).trimEnd() + '…'
+    : post.content
 
   const date = new Date(post.created_at).toLocaleDateString('en-US', {
     month: 'short',
@@ -85,7 +129,19 @@ export default function PostCard({ post, isAdmin, onEdit, onDelete }: Props) {
       }
     >
       <div className="flex items-center justify-between mb-4 text-sm text-zinc-500 dark:text-zinc-400">
-        <span className="font-medium text-zinc-800 dark:text-zinc-200">sarthakparmar</span>
+        <div className="flex items-center gap-1.5">
+          <span className="font-medium text-zinc-800 dark:text-zinc-200">{post.author_name || authorName}</span>
+          {isAdmin && (
+            <button
+              onClick={onEditName}
+              className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition text-zinc-400 dark:text-zinc-500"
+              title="Edit display name"
+              aria-label="Edit display name"
+            >
+              <Pencil size={12} />
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <span>{date}</span>
         </div>
@@ -97,15 +153,24 @@ export default function PostCard({ post, isAdmin, onEdit, onDelete }: Props) {
           <img
             src={post.image_url}
             alt="Post image"
-            className="max-w-full max-h-[560px] w-auto h-auto object-contain"
+            className="max-w-full max-h-[420px] w-auto h-auto object-contain"
             crossOrigin="anonymous"
           />
         </div>
       )}
 
       <p className="text-[15px] sm:text-base text-zinc-800 dark:text-zinc-100 whitespace-pre-wrap leading-7 tracking-[-0.01em]">
-        {post.content}
+        {renderWithLinks(displayContent)}
       </p>
+
+      {isLong && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+        >
+          {expanded ? 'Read less' : 'Read more'}
+        </button>
+      )}
 
       {/* Admin buttons */}
       {isAdmin && (

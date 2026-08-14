@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Navbar from '@/components/Navbar'
 import PostCard from '@/components/PostCard'
@@ -13,8 +13,15 @@ const ADMIN_PASSWORD = 'parmarhehe'
 
 export default function Home() {
   const [isAdmin, setIsAdmin] = useState(false)
+  const [authorName, setAuthorName] = useState('sarthakparmar')
+  const [siteName, setSiteName] = useState('Posts')
+  const [siteIcon, setSiteIcon] = useState('N')
   const [posts, setPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const [page, setPage] = useState(0)
+  const loadMoreRef = useRef<HTMLDivElement | null>(null)
   const [showNewPost, setShowNewPost] = useState(false)
   const [newContent, setNewContent] = useState('')
   const [posting, setPosting] = useState(false)
@@ -28,11 +35,76 @@ export default function Home() {
   useEffect(() => {
     const saved = localStorage.getItem('isAdmin')
     if (saved === 'true') setIsAdmin(true)
+
+    const savedName = localStorage.getItem('authorName')
+    if (savedName) setAuthorName(savedName)
   }, [])
+
+  async function handleEditName() {
+    const name = prompt('Enter display name:', authorName)
+    if (!name || !name.trim()) return
+    const trimmed = name.trim()
+    setAuthorName(trimmed)
+    localStorage.setItem('authorName', trimmed)
+
+    // Also update the name on every existing post, not just new ones
+    const ids = posts.map((p) => p.id)
+    if (ids.length > 0) {
+      const { error } = await supabase
+        .from('posts')
+        .update({ author_name: trimmed })
+        .in('id', ids)
+
+      if (error) {
+        alert('Name changed here, but failed to update old posts: ' + error.message)
+      } else {
+        loadPosts()
+      }
+    }
+  }
 
   useEffect(() => {
     loadPosts()
+    loadSiteSettings()
   }, [])
+
+  async function loadSiteSettings() {
+    const { data } = await supabase
+      .from('site_settings')
+      .select('*')
+      .eq('id', 'main')
+      .single()
+
+    if (data) {
+      setSiteName(data.site_name)
+      setSiteIcon(data.site_icon)
+    }
+  }
+
+  async function handleEditBranding() {
+    const name = prompt('Enter site name:', siteName)
+    if (!name || !name.trim()) return
+
+    const icon = prompt('Enter logo (a single letter or an emoji):', siteIcon)
+    if (!icon || !icon.trim()) return
+
+    const trimmedName = name.trim()
+    const trimmedIcon = icon.trim().slice(0, 4) // keep the badge small
+
+    const { error } = await supabase
+      .from('site_settings')
+      .update({ site_name: trimmedName, site_icon: trimmedIcon })
+      .eq('id', 'main')
+
+    if (error) {
+      alert('Failed to update branding: ' + error.message)
+    } else {
+      setSiteName(trimmedName)
+      setSiteIcon(trimmedIcon)
+    }
+  }
+
+  const PAGE_SIZE = 8
 
   async function loadPosts() {
     setLoading(true)
@@ -41,10 +113,55 @@ export default function Home() {
       .select('*')
       .eq('is_private', false)
       .order('created_at', { ascending: false })
+      .range(0, PAGE_SIZE - 1)
 
-    if (data) setPosts(data as Post[])
+    if (data) {
+      setPosts(data as Post[])
+      setHasMore(data.length === PAGE_SIZE)
+    }
+    setPage(0)
     setLoading(false)
   }
+
+  async function loadMorePosts() {
+    if (loadingMore || !hasMore) return
+    setLoadingMore(true)
+
+    const nextPage = page + 1
+    const from = nextPage * PAGE_SIZE
+    const to = from + PAGE_SIZE - 1
+
+    const { data } = await supabase
+      .from('posts')
+      .select('*')
+      .eq('is_private', false)
+      .order('created_at', { ascending: false })
+      .range(from, to)
+
+    if (data) {
+      setPosts((prev) => [...prev, ...(data as Post[])])
+      setHasMore(data.length === PAGE_SIZE)
+      setPage(nextPage)
+    }
+    setLoadingMore(false)
+  }
+
+  // Watches the bottom of the feed — when it scrolls into view, quietly load the next batch
+  useEffect(() => {
+    if (!loadMoreRef.current || !hasMore) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMorePosts()
+        }
+      },
+      { rootMargin: '400px' }
+    )
+
+    observer.observe(loadMoreRef.current)
+    return () => observer.disconnect()
+  }, [hasMore, loadingMore, page, loading])
 
   function handleLogin() {
     const password = prompt('Enter password:')
@@ -64,7 +181,7 @@ export default function Home() {
   }
 
   async function handleCreatePost() {
-    if (!newContent.trim() || !isAdmin) return
+    if ((!newContent.trim() && !imageFile) || !isAdmin) return
     setPosting(true)
 
     let imageUrl = null
@@ -94,7 +211,7 @@ export default function Home() {
     const { error } = await supabase.from('posts').insert({
       content: newContent.trim(),
       is_private: false,
-      author_name: 'sarthakparmar',
+      author_name: authorName,
       image_url: imageUrl,
     })
 
@@ -111,7 +228,7 @@ export default function Home() {
   }
 
   async function handleUpdatePost() {
-    if (!editingPost || !newContent.trim()) return
+    if (!editingPost || (!newContent.trim() && !imageFile && !imagePreview)) return
     setPosting(true)
 
     let imageUrl = editingPost.image_url // keep old image by default
@@ -208,6 +325,9 @@ export default function Home() {
         isLoggedIn={isAdmin}
         onLogin={handleLogin}
         onLogout={handleLogout}
+        siteName={siteName}
+        siteIcon={siteIcon}
+        onEditBranding={handleEditBranding}
         onNewPost={() => {
           setEditingPost(null)
           setNewContent('')
@@ -230,7 +350,7 @@ export default function Home() {
                 value={newContent}
                 onChange={(e) => setNewContent(e.target.value)}
                 placeholder="What's on your mind..."
-                className="w-full h-28 p-3 rounded-xl border border-black/10 dark:border-white/10 bg-transparent resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
+                className="w-full h-48 p-3 rounded-xl border border-black/10 dark:border-white/10 bg-transparent resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
                 autoFocus
               />
 
@@ -280,7 +400,7 @@ export default function Home() {
                   </button>
                   <button
                     onClick={editingPost ? handleUpdatePost : handleCreatePost}
-                    disabled={posting || !newContent.trim()}
+                    disabled={posting || (!newContent.trim() && !imageFile && !imagePreview)}
                     className="px-4 py-2 rounded-full bg-amber-400 text-black text-sm font-medium hover:bg-amber-300 disabled:opacity-50"
                   >
                     {posting ? 'Saving...' : editingPost ? 'Update' : 'Post'}
@@ -301,10 +421,19 @@ export default function Home() {
               key={post.id}
               post={post}
               isAdmin={isAdmin}
+              authorName={authorName}
               onEdit={openEdit}
               onDelete={handleDelete}
+              onEditName={handleEditName}
             />
           ))
+        )}
+
+        {/* Sentinel: scrolling this into view quietly loads the next batch of posts */}
+        {hasMore && !loading && (
+          <div ref={loadMoreRef} className="py-8 text-center text-zinc-400 text-sm">
+            {loadingMore ? 'Loading more...' : ''}
+          </div>
         )}
       </main>
     </div>
