@@ -1,4 +1,4 @@
-# Simple Public + Private Posts (Nas.com style)
+# Simple Public + Private Posts
 
 Minimal clean posts app:
 - Floating pill navbar
