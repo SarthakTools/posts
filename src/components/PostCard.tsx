@@ -3,6 +3,7 @@
 import { Post } from '@/types/post'
 import { useEffect, useState } from 'react'
 import { Pencil, Pin, PinOff, Bookmark, BookmarkCheck } from 'lucide-react'
+import { extractAverageColor, rgbToString } from '@/lib/color'
 
 type Props = {
   post: Post
@@ -14,6 +15,7 @@ type Props = {
   onEditName: () => void
   onToggleSave: (id: string) => void
   onTogglePin: (post: Post) => void
+  onAccentChange?: (id: string, rgb: string | null) => void
 }
 
 const CONTENT_PREVIEW_LIMIT = 220
@@ -61,6 +63,7 @@ export default function PostCard({
   onEditName,
   onToggleSave,
   onTogglePin,
+  onAccentChange,
 }: Props) {
   // Average color pulled from the post's image, used to tint the card.
   const [accent, setAccent] = useState<string | null>(null)
@@ -80,53 +83,22 @@ export default function PostCard({
   useEffect(() => {
     if (!post.image_url) {
       setAccent(null)
+      onAccentChange?.(post.id, null)
       return
     }
 
     let cancelled = false
-    const img = new window.Image()
-    img.crossOrigin = 'anonymous'
-    img.src = post.image_url
-
-    img.onload = () => {
+    extractAverageColor(post.image_url).then((rgb) => {
       if (cancelled) return
-      try {
-        const size = 16
-        const canvas = document.createElement('canvas')
-        canvas.width = size
-        canvas.height = size
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return
-
-        ctx.drawImage(img, 0, 0, size, size)
-        const { data } = ctx.getImageData(0, 0, size, size)
-
-        let r = 0, g = 0, b = 0, count = 0
-        for (let i = 0; i < data.length; i += 4) {
-          // skip near-transparent pixels
-          if (data[i + 3] < 100) continue
-          r += data[i]
-          g += data[i + 1]
-          b += data[i + 2]
-          count++
-        }
-        if (count === 0) return
-
-        r = Math.round(r / count)
-        g = Math.round(g / count)
-        b = Math.round(b / count)
-        setAccent(`${r}, ${g}, ${b}`)
-      } catch {
-        // Image blocked canvas reads (CORS) — just skip the tint, no big deal.
-        setAccent(null)
-      }
-    }
-    img.onerror = () => setAccent(null)
+      const str = rgb ? rgbToString(rgb) : null
+      setAccent(str)
+      onAccentChange?.(post.id, str)
+    })
 
     return () => {
       cancelled = true
     }
-  }, [post.image_url])
+  }, [post.image_url, post.id])
 
   return (
     <article

@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Navbar, { FeedTab } from '@/components/Navbar'
 import PostCard from '@/components/PostCard'
 import { Post } from '@/types/post'
+import { parseRgbString, toAmbientTint } from '@/lib/color'
 
 // The one and only password that unlocks admin mode.
 // NOTE: this is visible to anyone who inspects your site's code —
@@ -40,6 +41,25 @@ export default function Home() {
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
   const [savedPosts, setSavedPosts] = useState<Post[]>([])
   const [savedLoading, setSavedLoading] = useState(false)
+
+  // Ambient background: tracks whichever post is centered in the viewport,
+  // and the color sampled from that post's image (if any).
+  const [postColors, setPostColors] = useState<Record<string, string>>({})
+  const [activePostId, setActivePostId] = useState<string | null>(null)
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+
+  const handleAccentChange = useCallback((id: string, rgbStr: string | null) => {
+    setPostColors((prev) => {
+      if (rgbStr) {
+        if (prev[id] === rgbStr) return prev
+        return { ...prev, [id]: rgbStr }
+      }
+      if (!(id in prev)) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }, [])
 
   // Restore admin state on page load/refresh
   useEffect(() => {
@@ -103,6 +123,24 @@ export default function Home() {
   function scrollToTop() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+
+  // Watches a thin band across the vertical center of the viewport — whichever
+  // post card is crossing that band right now is treated as "the post you're on".
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const id = entry.target.getAttribute('data-post-id')
+            if (id) setActivePostId(id)
+          }
+        })
+      },
+      { rootMargin: '-45% 0px -45% 0px', threshold: 0 }
+    )
+    cardRefs.current.forEach((el) => observer.observe(el))
+    return () => observer.disconnect()
+  }, [activeTab, posts, savedPosts])
 
   async function loadSiteSettings() {
     const { data } = await supabase
@@ -457,12 +495,30 @@ export default function Home() {
   const visiblePosts = activeTab === 'posts' ? posts : savedPosts
   const isLoadingVisible = activeTab === 'posts' ? loading : savedLoading
 
+  // Color for the currently-centered post, darkened for use as a background
+  // glow. null means "use the default palette" (no image, or too light).
+  const activeRgbStr = activePostId ? postColors[activePostId] : null
+  const ambient = toAmbientTint(activeRgbStr ? parseRgbString(activeRgbStr) : null)
+
   return (
     <div className="min-h-screen pb-20 relative">
-      {/* Ambient background glow — muted, gives the glass panels something soft to blur */}
+      {/* Ambient background glow — muted, gives the glass panels something soft to blur.
+          Tints toward whichever post's image you're currently scrolled to. */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none bg-zinc-100 dark:bg-zinc-950">
-        <div className="absolute -top-40 left-1/4 w-[36rem] h-[36rem] bg-purple-400/20 dark:bg-purple-600/20 rounded-full blur-[100px]" />
-        <div className="absolute top-1/4 -right-40 w-[30rem] h-[30rem] bg-pink-400/15 dark:bg-orange-500/10 rounded-full blur-[100px]" />
+        <div
+          className="absolute -top-40 left-1/4 w-[36rem] h-[36rem] bg-purple-400/20 dark:bg-purple-600/20 rounded-full blur-[100px]"
+          style={{
+            transition: 'background-color 900ms ease',
+            ...(ambient && { backgroundColor: `rgba(${ambient.r}, ${ambient.g}, ${ambient.b}, 0.28)` }),
+          }}
+        />
+        <div
+          className="absolute top-1/4 -right-40 w-[30rem] h-[30rem] bg-pink-400/15 dark:bg-orange-500/10 rounded-full blur-[100px]"
+          style={{
+            transition: 'background-color 900ms ease',
+            ...(ambient && { backgroundColor: `rgba(${ambient.r}, ${ambient.g}, ${ambient.b}, 0.16)` }),
+          }}
+        />
       </div>
 
       <Navbar
@@ -565,18 +621,27 @@ export default function Home() {
           </div>
         ) : (
           visiblePosts.map((post) => (
-            <PostCard
+            <div
               key={post.id}
-              post={post}
-              isAdmin={isAdmin}
-              authorName={authorName}
-              isSaved={savedIds.has(post.id)}
-              onEdit={openEdit}
-              onDelete={handleDelete}
-              onEditName={handleEditName}
-              onToggleSave={handleToggleSave}
-              onTogglePin={handleTogglePin}
-            />
+              data-post-id={post.id}
+              ref={(el) => {
+                if (el) cardRefs.current.set(post.id, el)
+                else cardRefs.current.delete(post.id)
+              }}
+            >
+              <PostCard
+                post={post}
+                isAdmin={isAdmin}
+                authorName={authorName}
+                isSaved={savedIds.has(post.id)}
+                onEdit={openEdit}
+                onDelete={handleDelete}
+                onEditName={handleEditName}
+                onToggleSave={handleToggleSave}
+                onTogglePin={handleTogglePin}
+                onAccentChange={handleAccentChange}
+              />
+            </div>
           ))
         )}
 
