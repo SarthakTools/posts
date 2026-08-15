@@ -6,4 +6,5 @@ export type Post = {
   user_id: string | null
   author_name?: string | null
   image_url?: string | null
-} 
+  is_pinned?: boolean
+}

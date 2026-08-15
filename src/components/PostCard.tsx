@@ -2,15 +2,18 @@
 
 import { Post } from '@/types/post'
 import { useEffect, useState } from 'react'
-import { Pencil } from 'lucide-react'
+import { Pencil, Pin, PinOff, Bookmark, BookmarkCheck } from 'lucide-react'
 
 type Props = {
   post: Post
   isAdmin: boolean
   authorName: string
+  isSaved: boolean
   onEdit: (post: Post) => void
   onDelete: (id: string) => void
   onEditName: () => void
+  onToggleSave: (id: string) => void
+  onTogglePin: (post: Post) => void
 }
 
 const CONTENT_PREVIEW_LIMIT = 220
@@ -48,7 +51,17 @@ function renderWithLinks(text: string) {
   return result
 }
 
-export default function PostCard({ post, isAdmin, authorName, onEdit, onDelete, onEditName }: Props) {
+export default function PostCard({
+  post,
+  isAdmin,
+  authorName,
+  isSaved,
+  onEdit,
+  onDelete,
+  onEditName,
+  onToggleSave,
+  onTogglePin,
+}: Props) {
   // Average color pulled from the post's image, used to tint the card.
   const [accent, setAccent] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
@@ -117,7 +130,11 @@ export default function PostCard({ post, isAdmin, authorName, onEdit, onDelete, 
 
   return (
     <article
-      className="w-full max-w-2xl mx-auto rounded-2xl p-6 sm:p-7 relative border border-white/10 dark:border-white/10 backdrop-blur-2xl bg-white/40 dark:bg-white/[0.06] shadow-xl shadow-black/10 transition-colors duration-700"
+      className={`w-full max-w-2xl mx-auto rounded-2xl p-6 sm:p-7 relative border backdrop-blur-2xl bg-white/40 dark:bg-white/[0.06] shadow-xl shadow-black/10 transition-colors duration-700 ${
+        post.is_pinned
+          ? 'border-amber-400/40 dark:border-amber-400/30 ring-1 ring-amber-400/20'
+          : 'border-white/10 dark:border-white/10'
+      }`}
       style={
         accent
           ? {
@@ -128,6 +145,13 @@ export default function PostCard({ post, isAdmin, authorName, onEdit, onDelete, 
           : undefined
       }
     >
+      {post.is_pinned && (
+        <div className="flex items-center gap-1 mb-3 text-xs font-medium text-amber-600 dark:text-amber-400">
+          <Pin size={12} className="fill-current" />
+          <span>Pinned</span>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-4 text-sm text-zinc-500 dark:text-zinc-400">
         <div className="flex items-center gap-1.5">
           <span className="font-medium text-zinc-800 dark:text-zinc-200">{authorName}</span>
@@ -142,8 +166,34 @@ export default function PostCard({ post, isAdmin, authorName, onEdit, onDelete, 
             </button>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <span>{date}</span>
+        <div className="flex items-center gap-1">
+          <span className="mr-1">{date}</span>
+          <button
+            onClick={() => onToggleSave(post.id)}
+            className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition text-zinc-400 dark:text-zinc-500"
+            title={isSaved ? 'Remove from saved' : 'Save post'}
+            aria-label={isSaved ? 'Remove from saved' : 'Save post'}
+          >
+            {isSaved ? (
+              <BookmarkCheck size={16} className="text-amber-500" />
+            ) : (
+              <Bookmark size={16} />
+            )}
+          </button>
+          {isAdmin && (
+            <button
+              onClick={() => onTogglePin(post)}
+              className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition text-zinc-400 dark:text-zinc-500"
+              title={post.is_pinned ? 'Unpin post' : 'Pin post to top'}
+              aria-label={post.is_pinned ? 'Unpin post' : 'Pin post to top'}
+            >
+              {post.is_pinned ? (
+                <PinOff size={16} className="text-amber-500" />
+              ) : (
+                <Pin size={16} />
+              )}
+            </button>
+          )}
         </div>
       </div>
 

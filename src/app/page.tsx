@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import Navbar from '@/components/Navbar'
+import Navbar, { FeedTab } from '@/components/Navbar'
 import PostCard from '@/components/PostCard'
 import { Post } from '@/types/post'
 
@@ -12,6 +12,7 @@ import { Post } from '@/types/post'
 // it just hides/shows buttons, it is not real security.
 const ADMIN_PASSWORD = 'parmarhehe'
 const AUTHOR_NAME = 'MayBEE'
+const SAVED_POSTS_KEY = 'savedPostIds'
 
 export default function Home() {
   const [isAdmin, setIsAdmin] = useState(false)
@@ -34,6 +35,12 @@ export default function Home() {
   // Edit mode
   const [editingPost, setEditingPost] = useState<Post | null>(null)
 
+  // Posts / Saved tab
+  const [activeTab, setActiveTab] = useState<FeedTab>('posts')
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+  const [savedPosts, setSavedPosts] = useState<Post[]>([])
+  const [savedLoading, setSavedLoading] = useState(false)
+
   // Restore admin state on page load/refresh
   useEffect(() => {
     const saved = localStorage.getItem('isAdmin')
@@ -41,6 +48,17 @@ export default function Home() {
 
     const savedName = localStorage.getItem('authorName')
     if (savedName) setAuthorName(savedName)
+
+    // Restore bookmarked post ids
+    const savedIdsRaw = localStorage.getItem(SAVED_POSTS_KEY)
+    if (savedIdsRaw) {
+      try {
+        const ids: string[] = JSON.parse(savedIdsRaw)
+        setSavedIds(new Set(ids))
+      } catch {
+        // ignore malformed data
+      }
+    }
   }, [])
 
   async function handleEditName() {
@@ -52,6 +70,7 @@ export default function Home() {
 
     // Update the currently loaded cards immediately so every visible post changes.
     setPosts((prev) => prev.map((p) => ({ ...p, author_name: trimmed })))
+    setSavedPosts((prev) => prev.map((p) => ({ ...p, author_name: trimmed })))
 
     // Then persist the new name for ALL posts in Supabase, including posts
     // that haven't been loaded yet by infinite scroll.
@@ -123,17 +142,29 @@ export default function Home() {
 
   const PAGE_SIZE = 8
 
+  // Pinned posts first, otherwise newest first. Stable sort keeps date order within each group.
+  function sortWithPinnedFirst(list: Post[]) {
+    return [...list].sort((a, b) => {
+      if (!!a.is_pinned !== !!b.is_pinned) return a.is_pinned ? -1 : 1
+      return 0 // already newest-first from the query, keep that order
+    })
+  }
+
   async function loadPosts() {
     setLoading(true)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('posts')
       .select('*')
       .eq('is_private', false)
       .order('created_at', { ascending: false })
       .range(0, PAGE_SIZE - 1)
 
-    if (data) {
-      setPosts(data as Post[])
+    if (error) {
+      console.error('Failed to load posts:', error.message)
+      alert('Could not load posts: ' + error.message)
+      setHasMore(false)
+    } else if (data) {
+      setPosts(sortWithPinnedFirst(data as Post[]))
       setHasMore(data.length === PAGE_SIZE)
     }
     setPage(0)
@@ -148,15 +179,18 @@ export default function Home() {
     const from = nextPage * PAGE_SIZE
     const to = from + PAGE_SIZE - 1
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('posts')
       .select('*')
       .eq('is_private', false)
       .order('created_at', { ascending: false })
       .range(from, to)
 
-    if (data) {
-      setPosts((prev) => [...prev, ...(data as Post[])])
+    if (error) {
+      console.error('Failed to load more posts:', error.message)
+      setHasMore(false) // stop the observer from retrying forever
+    } else if (data) {
+      setPosts((prev) => sortWithPinnedFirst([...prev, ...(data as Post[])]))
       setHasMore(data.length === PAGE_SIZE)
       setPage(nextPage)
     }
@@ -165,7 +199,7 @@ export default function Home() {
 
   // Watches the bottom of the feed — when it scrolls into view, quietly load the next batch
   useEffect(() => {
-    if (!loadMoreRef.current || !hasMore) return
+    if (!loadMoreRef.current || !hasMore || activeTab !== 'posts') return
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -178,7 +212,82 @@ export default function Home() {
 
     observer.observe(loadMoreRef.current)
     return () => observer.disconnect()
-  }, [hasMore, loadingMore, page, loading])
+  }, [hasMore, loadingMore, page, loading, activeTab])
+
+  // Fetch the full post data for saved/bookmarked ids whenever the Saved tab is opened
+  async function loadSavedPosts(ids: Set<string>) {
+    if (ids.size === 0) {
+      setSavedPosts([])
+      return
+    }
+    setSavedLoading(true)
+    const { data, error } = await supabase
+      .from('posts')
+      .select('*')
+      .in('id', Array.from(ids))
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Failed to load saved posts:', error.message)
+    } else if (data) {
+      setSavedPosts(sortWithPinnedFirst(data as Post[]))
+    }
+    setSavedLoading(false)
+  }
+
+  function handleTabChange(tab: FeedTab) {
+    setActiveTab(tab)
+    if (tab === 'saved') {
+      loadSavedPosts(savedIds)
+    }
+  }
+
+  function handleToggleSave(id: string) {
+    setSavedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      localStorage.setItem(SAVED_POSTS_KEY, JSON.stringify(Array.from(next)))
+      // Keep the Saved tab in sync if it's currently open
+      if (activeTab === 'saved') {
+        loadSavedPosts(next)
+      }
+      return next
+    })
+  }
+
+  async function handleTogglePin(post: Post) {
+    const nextPinned = !post.is_pinned
+
+    // Optimistic update so the card re-sorts immediately
+    setPosts((prev) => {
+      const updated = prev.map((p) => (p.id === post.id ? { ...p, is_pinned: nextPinned } : p))
+      return sortWithPinnedFirst(updated)
+    })
+    setSavedPosts((prev) =>
+      prev.map((p) => (p.id === post.id ? { ...p, is_pinned: nextPinned } : p))
+    )
+
+    const { data, error } = await supabase
+      .from('posts')
+      .update({ is_pinned: nextPinned })
+      .eq('id', post.id)
+      .select()
+
+    if (error) {
+      alert('Failed to update pin: ' + error.message)
+      loadPosts() // revert to server truth
+    } else if (!data || data.length === 0) {
+      alert(
+        'The pin update was blocked by Supabase permissions (Row Level Security). ' +
+        'Make sure the UPDATE policy on the posts table allows this.'
+      )
+      loadPosts()
+    }
+  }
 
   function handleLogin() {
     const password = prompt('Enter password:')
@@ -303,6 +412,9 @@ export default function Home() {
       setPosts((prev) =>
         prev.map((p) => (p.id === editingPost.id ? { ...p, ...updated } : p))
       )
+      setSavedPosts((prev) =>
+        prev.map((p) => (p.id === editingPost.id ? { ...p, ...updated } : p))
+      )
       setEditingPost(null)
       setNewContent('')
       setImageFile(null)
@@ -325,6 +437,13 @@ export default function Home() {
     } else {
       // Remove from local feed without resetting pagination / scroll
       setPosts((prev) => prev.filter((p) => p.id !== id))
+      setSavedPosts((prev) => prev.filter((p) => p.id !== id))
+      if (savedIds.has(id)) {
+        const next = new Set(savedIds)
+        next.delete(id)
+        setSavedIds(next)
+        localStorage.setItem(SAVED_POSTS_KEY, JSON.stringify(Array.from(next)))
+      }
     }
   }
 
@@ -334,6 +453,9 @@ export default function Home() {
     setImagePreview(post.image_url || null)
     setImageFile(null)
   }
+
+  const visiblePosts = activeTab === 'posts' ? posts : savedPosts
+  const isLoadingVisible = activeTab === 'posts' ? loading : savedLoading
 
   return (
     <div className="min-h-screen pb-20 relative">
@@ -350,6 +472,8 @@ export default function Home() {
         siteName={siteName}
         siteIcon={siteIcon}
         onEditBranding={handleEditBranding}
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
         onNewPost={() => {
           setEditingPost(null)
           setNewContent('')
@@ -433,26 +557,31 @@ export default function Home() {
           </div>
         )}
 
-        {loading ? (
+        {isLoadingVisible ? (
           <div className="text-center text-zinc-500 py-20">Loading...</div>
-        ) : posts.length === 0 ? (
-          <div className="text-center text-zinc-500 py-20">No posts yet.</div>
+        ) : visiblePosts.length === 0 ? (
+          <div className="text-center text-zinc-500 py-20">
+            {activeTab === 'saved' ? 'No saved posts yet. Tap the bookmark icon on a post to save it here.' : 'No posts yet.'}
+          </div>
         ) : (
-          posts.map((post) => (
+          visiblePosts.map((post) => (
             <PostCard
               key={post.id}
               post={post}
               isAdmin={isAdmin}
               authorName={authorName}
+              isSaved={savedIds.has(post.id)}
               onEdit={openEdit}
               onDelete={handleDelete}
               onEditName={handleEditName}
+              onToggleSave={handleToggleSave}
+              onTogglePin={handleTogglePin}
             />
           ))
         )}
 
-        {/* Sentinel: scrolling this into view quietly loads the next batch of posts */}
-        {hasMore && !loading && (
+        {/* Sentinel: scrolling this into view quietly loads the next batch of posts (Posts tab only) */}
+        {activeTab === 'posts' && hasMore && !loading && (
           <div ref={loadMoreRef} className="py-8 text-center text-zinc-400 text-sm">
             {loadingMore ? 'Loading more...' : ''}
           </div>
@@ -471,4 +600,4 @@ export default function Home() {
       )}
     </div>
   )
-} 
+}
