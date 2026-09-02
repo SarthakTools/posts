@@ -11,7 +11,7 @@ import { parseRgbString, toAmbientTint } from '@/lib/color'
 // The one and only password that unlocks admin mode.
 // NOTE: this is visible to anyone who inspects your site's code —
 // it just hides/shows buttons, it is not real security.
-const ADMIN_PASSWORD = 'parmarhehe'
+const ADMIN_PASSWORD = 'hehe_typescript'
 const AUTHOR_NAME = 'MayBEE'
 const SAVED_POSTS_KEY = 'savedPostIds'
 
